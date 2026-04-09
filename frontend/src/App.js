@@ -13,6 +13,7 @@ import DMPage from '@/pages/DMPage';
 import DMThreadPage from '@/pages/DMThreadPage';
 import BadgesPage from '@/pages/BadgesPage';
 import SettingsPage from '@/pages/SettingsPage';
+import VIPPage from '@/pages/VIPPage';
 import Navigation from '@/components/Navigation';
 
 function ProtectedRoute({ children }) {
@@ -34,7 +35,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={!user ? <LandingPage /> : user.onboarding_completed ? <Navigate to="/home" /> : <Navigate to="/onboarding" />} />
       <Route path="/auth" element={!user ? <AuthPage /> : <Navigate to="/home" />} />
-      <Route path="/onboarding" element={user && !user.onboarding_completed ? <OnboardingPage /> : <Navigate to="/home" />} />
+      <Route path="/onboarding" element={user && !user.onboarding_completed ? <OnboardingPage /> : user ? <Navigate to="/home" /> : <Navigate to="/auth" />} />
       <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
       <Route path="/chat/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
       <Route path="/conversation-end/:conversationId" element={<ProtectedRoute><ConversationEndPage /></ProtectedRoute>} />
@@ -43,6 +44,7 @@ function AppRoutes() {
       <Route path="/dm" element={<ProtectedRoute><DMPage /></ProtectedRoute>} />
       <Route path="/dm/:threadId" element={<ProtectedRoute><DMThreadPage /></ProtectedRoute>} />
       <Route path="/badges" element={<ProtectedRoute><BadgesPage /></ProtectedRoute>} />
+      <Route path="/vip" element={<ProtectedRoute><VIPPage /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
     </Routes>
   );

@@ -291,6 +291,15 @@ async def complete_onboarding(input: OnboardingInput, request: Request):
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.users.update_one({"_id": ObjectId(user["_id"])}, {"$set": update})
+    # Increment interest usage counts
+    for name in input.interest_ids:
+        await db.interests.update_one({"name": name}, {"$inc": {"usage_count": 1}})
+    # Award Initiate badge
+    initiate = await db.badges.find_one({"name": "Initiate"}, {"_id": 0})
+    if initiate:
+        existing_badge = await db.user_badges.find_one({"user_id": user["_id"], "badge_id": initiate["id"]})
+        if not existing_badge:
+            await db.user_badges.insert_one({"user_id": user["_id"], "badge_id": initiate["id"], "earned_at": datetime.now(timezone.utc).isoformat(), "is_showcased": False})
     updated = await db.users.find_one({"_id": ObjectId(user["_id"])}, {"password_hash": 0})
     updated["_id"] = str(updated["_id"])
     return {"user": updated}
@@ -310,7 +319,10 @@ async def list_interests(category: Optional[str] = None, search: Optional[str] =
     if search:
         query["name"] = {"$regex": search, "$options": "i"}
     interests = await db.interests.find(query, {"_id": 0}).sort("category", 1).to_list(300)
-    return {"interests": interests}
+    total_users = max(await db.users.count_documents({"onboarding_completed": True}), 1)
+    for i in interests:
+        i["usage_percentage"] = round((i.get("usage_count", 0) / total_users) * 100, 1)
+    return {"interests": interests, "total_users": total_users}
 
 @api.put("/users/interests")
 async def update_user_interests(input: UpdateInterestsInput, request: Request):
@@ -1403,8 +1415,181 @@ async def startup():
         f.write(f"## Admin\n- Email: {os.environ.get('ADMIN_EMAIL', 'admin@justtalk.com')}\n")
         f.write(f"- Password: {os.environ.get('ADMIN_PASSWORD', 'admin123')}\n")
         f.write("- Role: admin\n\n")
+        f.write("## Test User\n- Email: test@test.com\n- Password: test123\n\n")
         f.write("## Auth Endpoints\n")
         f.write("- POST /api/auth/register\n- POST /api/auth/login\n- POST /api/auth/logout\n- GET /api/auth/me\n")
+    # Compute initial interest stats
+    await compute_interest_stats()
+
+# ── Conversation Heat Map ────────────────────────────────────
+@api.get("/stats/heatmap")
+async def get_conversation_heatmap(request: Request):
+    """Returns conversation counts by hour for the past 7 days"""
+    await get_current_user(request)
+    seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    convos = await db.conversations.find(
+        {"created_at": {"$gte": seven_days_ago}}, {"_id": 0, "created_at": 1}
+    ).to_list(10000)
+    heatmap = [0] * 24
+    for c in convos:
+        try:
+            dt = datetime.fromisoformat(c["created_at"])
+            heatmap[dt.hour] += 1
+        except Exception:
+            pass
+    total = sum(heatmap) or 1
+    active_now = await db.conversations.count_documents({"status": "active"})
+    return {
+        "heatmap": [{"hour": h, "count": heatmap[h], "percentage": round(heatmap[h] / total * 100, 1)} for h in range(24)],
+        "active_conversations": active_now,
+        "total_past_7_days": sum(heatmap),
+    }
+
+# ── Interest Trending Stats ──────────────────────────────────
+@api.get("/interests/trending")
+async def get_trending_interests():
+    """Returns interests with usage percentage and trending status"""
+    total_users = max(await db.users.count_documents({"onboarding_completed": True}), 1)
+    interests = await db.interests.find({}, {"_id": 0}).sort("usage_count", -1).to_list(300)
+    for i in interests:
+        i["usage_percentage"] = round((i.get("usage_count", 0) / total_users) * 100, 1)
+    return {"interests": interests, "total_users": total_users}
+
+async def compute_interest_stats():
+    """Compute usage counts for interests based on user selections"""
+    all_interests = await db.interests.find({}, {"_id": 0, "name": 1, "id": 1}).to_list(300)
+    interest_name_map = {i["name"]: i.get("id", "") for i in all_interests}
+    users = await db.users.find({"onboarding_completed": True}, {"_id": 0, "interests": 1}).to_list(100000)
+    counts = {}
+    for u in users:
+        for name in (u.get("interests") or []):
+            counts[name] = counts.get(name, 0) + 1
+    # Top 10 by count are trending
+    sorted_names = sorted(counts.keys(), key=lambda n: counts.get(n, 0), reverse=True)
+    trending_names = set(sorted_names[:10])
+    for name, iid in interest_name_map.items():
+        await db.interests.update_one({"name": name}, {"$set": {
+            "usage_count": counts.get(name, 0),
+            "is_trending": name in trending_names,
+        }})
+
+# ── Typing Indicators (via polling) ──────────────────────────
+@api.post("/conversations/{conv_id}/typing")
+async def set_typing(conv_id: str, request: Request):
+    user = await get_current_user(request)
+    await db.typing_indicators.update_one(
+        {"conversation_id": conv_id, "user_id": user["_id"]},
+        {"$set": {"conversation_id": conv_id, "user_id": user["_id"], "timestamp": datetime.now(timezone.utc).isoformat()}},
+        upsert=True
+    )
+    return {"ok": True}
+
+@api.get("/conversations/{conv_id}/typing")
+async def get_typing(conv_id: str, request: Request):
+    user = await get_current_user(request)
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=3)).isoformat()
+    indicators = await db.typing_indicators.find(
+        {"conversation_id": conv_id, "user_id": {"$ne": user["_id"]}, "timestamp": {"$gte": cutoff}},
+        {"_id": 0}
+    ).to_list(10)
+    return {"is_typing": len(indicators) > 0}
+
+# ── Promotions / Ambassador ──────────────────────────────────
+class PromotionSubmitInput(BaseModel):
+    tiktok_handle: str
+    tiktok_video_url: Optional[str] = None
+
+@api.post("/promotions/submit")
+async def submit_promotion(input: PromotionSubmitInput, request: Request):
+    user = await get_current_user(request)
+    existing = await db.promotion_claims.find_one({"user_id": user["_id"]})
+    if existing and existing.get("status") == "approved":
+        raise HTTPException(status_code=400, detail="Promotion already approved")
+    if existing and existing.get("status") == "pending":
+        raise HTTPException(status_code=400, detail="Promotion already pending review")
+    claim = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["_id"],
+        "tiktok_handle": input.tiktok_handle,
+        "tiktok_video_url": input.tiktok_video_url,
+        "status": "pending",
+        "submitted_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if existing:
+        await db.promotion_claims.update_one({"user_id": user["_id"]}, {"$set": claim})
+    else:
+        await db.promotion_claims.insert_one(claim)
+    return {"message": "Promotion submitted for review", "claim": {k: v for k, v in claim.items() if k != "_id"}}
+
+@api.get("/promotions/me")
+async def get_my_promotion(request: Request):
+    user = await get_current_user(request)
+    claim = await db.promotion_claims.find_one({"user_id": user["_id"]}, {"_id": 0})
+    return {"claim": claim}
+
+# ── User Links ───────────────────────────────────────────────
+class UserLinksInput(BaseModel):
+    links: List[dict]  # [{label, url}]
+
+@api.get("/users/links")
+async def get_user_links(request: Request):
+    user = await get_current_user(request)
+    links = await db.user_links.find({"user_id": user["_id"]}, {"_id": 0}).sort("display_order", 1).to_list(10)
+    return {"links": links}
+
+@api.put("/users/links")
+async def update_user_links(input: UserLinksInput, request: Request):
+    user = await get_current_user(request)
+    if len(input.links) > 10:
+        raise HTTPException(status_code=400, detail="Max 10 links")
+    await db.user_links.delete_many({"user_id": user["_id"]})
+    for i, link in enumerate(input.links):
+        if not link.get("label") or not link.get("url"):
+            continue
+        await db.user_links.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user["_id"],
+            "label": link["label"][:50],
+            "url": link["url"],
+            "display_order": i,
+        })
+    return {"message": "Links updated"}
+
+# ── Delete Account ───────────────────────────────────────────
+@api.delete("/users/me")
+async def delete_account(request: Request, response: Response):
+    user = await get_current_user(request)
+    uid = user["_id"]
+    # Delete all user data
+    await db.users.delete_one({"_id": ObjectId(uid)})
+    await db.user_statistics.delete_many({"user_id": uid})
+    await db.user_badges.delete_many({"user_id": uid})
+    await db.polaroids.delete_many({"user_id": uid})
+    await db.user_socials.delete_many({"user_id": uid})
+    await db.user_links.delete_many({"user_id": uid})
+    await db.queue.delete_many({"user_id": uid})
+    await db.ai_conversation_history.delete_many({"user_id": uid})
+    await db.notifications.delete_many({"user_id": uid})
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/")
+    return {"message": "Account deleted"}
+
+# ── Notifications ────────────────────────────────────────────
+@api.get("/notifications")
+async def get_notifications(request: Request, limit: int = 50):
+    user = await get_current_user(request)
+    notifs = await db.notifications.find({"user_id": user["_id"]}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    unread = await db.notifications.count_documents({"user_id": user["_id"], "is_read": False})
+    return {"notifications": notifs, "unread_count": unread}
+
+@api.put("/notifications/read")
+async def mark_notifications_read(request: Request):
+    user = await get_current_user(request)
+    await db.notifications.update_many(
+        {"user_id": user["_id"], "is_read": False},
+        {"$set": {"is_read": True, "read_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"message": "Notifications marked as read"}
 
 @app.on_event("shutdown")
 async def shutdown():
