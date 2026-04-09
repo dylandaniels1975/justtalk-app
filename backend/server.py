@@ -706,24 +706,31 @@ AI_SYSTEM_PROMPTS = {
 
 async def generate_ai_response(user_id: str, persona: str, user_message: str, interests: list) -> str:
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
-        api_key = os.environ.get("EMERGENT_LLM_KEY")
+        from openai import AsyncOpenAI
+        api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             return "yeah"
+        
         system = AI_SYSTEM_PROMPTS["base"] + "\n\n" + AI_SYSTEM_PROMPTS.get(persona, "")
         if interests:
             system += f"\n\nUser's interests: {', '.join(interests)}"
-        session_id = f"jt_{user_id}_{persona}"
-        chat = LlmChat(api_key=api_key, session_id=session_id, system_message=system)
-        chat.with_model("openai", "gpt-4o-mini")
-        # Get recent history
+        
+        client = AsyncOpenAI(api_key=api_key)
         history = await db.ai_conversation_history.find(
             {"user_id": user_id, "persona": persona}
-        ).sort("created_at", -1).to_list(10)
-        # emergentintegrations handles multi-turn internally via session_id
-        msg = UserMessage(text=user_message)
-        response = await chat.send_message(msg)
-        # Save to history
+        ).sort("created_at", -1).limit(10).to_list(10)
+        
+        messages = [{"role": "system", "content": system}]
+        for h in reversed(history):
+            messages.append({"role": h["role"], "content": h["content"]})
+        messages.append({"role": "user", "content": user_message})
+        
+        completion = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages
+        )
+        response = completion.choices[0].message.content
+        
         await db.ai_conversation_history.insert_one({
             "user_id": user_id, "persona": persona, "role": "user",
             "content": user_message, "created_at": datetime.now(timezone.utc).isoformat()
@@ -732,6 +739,7 @@ async def generate_ai_response(user_id: str, persona: str, user_message: str, in
             "user_id": user_id, "persona": persona, "role": "assistant",
             "content": response, "created_at": datetime.now(timezone.utc).isoformat()
         })
+        
         return response
     except Exception as e:
         logger.error(f"AI error: {e}")
@@ -1193,37 +1201,42 @@ async def create_checkout(input: StripeCheckoutInput, request: Request):
     if user.get("is_vip"):
         raise HTTPException(status_code=400, detail="Already VIP")
     try:
-        from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
-        api_key = os.environ.get("STRIPE_API_KEY")
-        if not api_key:
+        import stripe
+        stripe.api_key = os.environ.get("STRIPE_API_KEY")
+        if not stripe.api_key:
             raise HTTPException(status_code=500, detail="Stripe not configured")
-        host_url = str(request.base_url).rstrip('/')
-        webhook_url = f"{host_url}/api/webhook/stripe"
-        stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+        
         success_url = f"{input.origin_url}/settings?session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = f"{input.origin_url}/settings"
-        checkout_req = CheckoutSessionRequest(
-            amount=9.99,
-            currency="usd",
+        
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "product_data": {"name": "Just Talk VIP"},
+                    "unit_amount": 999,
+                },
+                "quantity": 1,
+            }],
+            mode="payment",
             success_url=success_url,
             cancel_url=cancel_url,
             metadata={"user_id": user["_id"], "type": "vip_subscription"}
         )
-        session = await stripe_checkout.create_checkout_session(checkout_req)
-        # Record transaction
+        
         await db.payment_transactions.insert_one({
             "id": str(uuid.uuid4()),
             "user_id": user["_id"],
-            "session_id": session.session_id,
+            "session_id": session.id,
             "amount": 9.99,
             "currency": "usd",
             "payment_status": "pending",
             "metadata": {"type": "vip_subscription"},
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
-        return {"url": session.url, "session_id": session.session_id}
-    except ImportError:
-        raise HTTPException(status_code=500, detail="Stripe integration not available")
+        
+        return {"url": session.url, "session_id": session.id}
     except Exception as e:
         logger.error(f"Stripe error: {e}")
         raise HTTPException(status_code=500, detail="Payment creation failed")
@@ -1237,23 +1250,19 @@ async def check_payment_status(session_id: str, request: Request):
     if txn.get("payment_status") == "paid":
         return {"status": "paid", "payment_status": "paid"}
     try:
-        from emergentintegrations.payments.stripe.checkout import StripeCheckout
-        api_key = os.environ.get("STRIPE_API_KEY")
-        host_url = str(request.base_url).rstrip('/')
-        webhook_url = f"{host_url}/api/webhook/stripe"
-        stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
-        status = await stripe_checkout.get_checkout_status(session_id)
-        if status.payment_status == "paid" and txn.get("payment_status") != "paid":
+        import stripe
+        stripe.api_key = os.environ.get("STRIPE_API_KEY")
+        session = stripe.checkout.Session.retrieve(session_id)
+        
+        if session.payment_status == "paid" and txn.get("payment_status") != "paid":
             await db.payment_transactions.update_one(
                 {"session_id": session_id},
-                {"$set": {"payment_status": "paid", "status": status.status}}
+                {"$set": {"payment_status": "paid", "status": session.status}}
             )
-            # Activate VIP
             await db.users.update_one({"_id": ObjectId(user["_id"])}, {"$set": {
                 "is_vip": True, "conversations_left": 999999,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }})
-            # Award Patron badge
             patron = await db.badges.find_one({"name": "Patron"}, {"_id": 0})
             if patron:
                 existing = await db.user_badges.find_one({"user_id": user["_id"], "badge_id": patron["id"]})
@@ -1262,7 +1271,7 @@ async def check_payment_status(session_id: str, request: Request):
                         "user_id": user["_id"], "badge_id": patron["id"],
                         "earned_at": datetime.now(timezone.utc).isoformat(), "is_showcased": False,
                     })
-        return {"status": status.status, "payment_status": status.payment_status}
+        return {"status": session.status, "payment_status": session.payment_status}
     except Exception as e:
         logger.error(f"Stripe status error: {e}")
         return {"status": txn.get("status", "unknown"), "payment_status": txn.get("payment_status", "pending")}
@@ -1270,19 +1279,20 @@ async def check_payment_status(session_id: str, request: Request):
 @api.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
     try:
-        from emergentintegrations.payments.stripe.checkout import StripeCheckout
-        api_key = os.environ.get("STRIPE_API_KEY")
-        host_url = str(request.base_url).rstrip('/')
-        webhook_url = f"{host_url}/api/webhook/stripe"
-        stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+        import stripe
+        stripe.api_key = os.environ.get("STRIPE_API_KEY")
         body = await request.body()
         sig = request.headers.get("Stripe-Signature", "")
-        event = await stripe_checkout.handle_webhook(body, sig)
-        if event.payment_status == "paid":
-            user_id = event.metadata.get("user_id")
-            if user_id:
+        webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
+        
+        event = stripe.Webhook.construct_event(body, sig, webhook_secret) if webhook_secret else stripe.Event.construct_from(await request.json(), stripe.api_key)
+        
+        if event.type == "checkout.session.completed":
+            session = event.data.object
+            user_id = session.metadata.get("user_id")
+            if user_id and session.payment_status == "paid":
                 await db.payment_transactions.update_one(
-                    {"session_id": event.session_id},
+                    {"session_id": session.id},
                     {"$set": {"payment_status": "paid", "status": "complete"}}
                 )
                 await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {
