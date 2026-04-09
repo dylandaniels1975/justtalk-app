@@ -9,14 +9,14 @@ import { SignOut, Bell, SpeakerHigh, Moon, Crown, Pencil, Link as LinkIcon, Chec
 import { toast } from 'sonner';
 
 const SOCIAL_PLATFORMS = [
-  { key: 'instagram', name: 'Instagram', icon: '\U0001f4f7' },
-  { key: 'twitter', name: 'Twitter/X', icon: '\U0001f426' },
-  { key: 'tiktok', name: 'TikTok', icon: '\U0001f3b5' },
-  { key: 'spotify', name: 'Spotify', icon: '\U0001f3a7' },
-  { key: 'discord', name: 'Discord', icon: '\U0001f4ac' },
-  { key: 'youtube', name: 'YouTube', icon: '\u25b6\ufe0f' },
-  { key: 'twitch', name: 'Twitch', icon: '\U0001f4fa' },
-  { key: 'linkedin', name: 'LinkedIn', icon: '\U0001f454' },
+  { key: 'instagram', name: 'Instagram', icon: '📷' },
+  { key: 'twitter', name: 'Twitter/X', icon: '🐦' },
+  { key: 'tiktok', name: 'TikTok', icon: '🎵' },
+  { key: 'spotify', name: 'Spotify', icon: '🎧' },
+  { key: 'discord', name: 'Discord', icon: '💬' },
+  { key: 'youtube', name: 'YouTube', icon: '▶️' },
+  { key: 'twitch', name: 'Twitch', icon: '📺' },
+  { key: 'linkedin', name: 'LinkedIn', icon: '👔' },
 ];
 
 export default function SettingsPage() {
