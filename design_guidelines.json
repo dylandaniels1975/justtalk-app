@@ -1,0 +1,97 @@
+{
+  "theme": "dark",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "design_philosophy": "Raw, anonymous, and brutalist. 'No selfies, no followers, no bullshit'. Strip away all unnecessary decorations. Rely on stark typography, pure blacks, high-contrast whites, and exposed grid layouts to convey a sense of underground authenticity. The aesthetic is text-forward, highly legible, and cinematic.",
+  "colors": {
+    "background": "#050505",
+    "surface": "#111111",
+    "surface_hover": "#1A1A1A",
+    "border": "#262626",
+    "border_focus": "#FFFFFF",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#A1A1AA",
+    "accent": "#FF3B30",
+    "accent_glow": "rgba(255, 59, 48, 0.2)",
+    "success": "#10B981"
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Chivo",
+      "body": "Manrope",
+      "mono": "IBM Plex Mono"
+    },
+    "scales": {
+      "h1": "text-5xl sm:text-6xl tracking-tighter font-black leading-none",
+      "h2": "text-3xl sm:text-4xl tracking-tight font-bold",
+      "h3": "text-2xl font-semibold",
+      "body": "text-base leading-relaxed",
+      "mono_label": "text-xs tracking-[0.2em] uppercase font-mono text-zinc-500"
+    }
+  },
+  "spacing_and_layout": {
+    "strategy": "Generous spacing on landing/marketing sections (p-12 to p-24). Dense, control-room grid for the chat interface and queues. Exact padding and margins.",
+    "bento_grid": "Use asymmetrical grid for user profiles. Polaroids act as the primary content blocks spanning various row heights."
+  },
+  "components": {
+    "polaroid_card": {
+      "description": "A digital representation of a conversation snapshot acting as user profile content.",
+      "styles": "bg-[#111111] border border-white/10 p-4 pb-14 shadow-2xl relative transition-transform hover:-translate-y-2 hover:border-white/30 rounded-sm",
+      "inner_content": "A visual snapshot of text (simulated chat log) on a darker #000 background inside the card."
+    },
+    "chat_interface": {
+      "description": "Real-time chat UI.",
+      "styles": "No standard bloated chat bubbles. Messages from others are left-aligned with a 2px border-l border-white/20 pl-4 py-1. User messages are right-aligned, text-secondary.",
+      "input": "border-t border-white/10 bg-transparent p-6 w-full outline-none focus:ring-0 text-white placeholder:text-zinc-600 font-mono text-sm"
+    },
+    "queue_matching": {
+      "description": "Waiting screen.",
+      "visual": "Pure black screen. 3 small glowing accent-colored (#FF3B30) dots pulsating using framer-motion. Text 'Searching for connection...' in IBM Plex Mono."
+    },
+    "forms": {
+      "description": "Onboarding forms (gender, interests, country).",
+      "styles": "Use Shadcn customized: flat borders, rounded-none, bg-transparent. Focus states turn the border pure white. Large text inputs."
+    },
+    "buttons": {
+      "primary": "bg-white text-black font-bold uppercase tracking-widest px-8 py-4 hover:bg-zinc-200 transition-colors rounded-none w-full sm:w-auto",
+      "secondary": "border border-white/20 text-white bg-transparent hover:bg-white/5 px-8 py-4 rounded-none uppercase tracking-widest",
+      "icon": "p-3 hover:bg-white/10 rounded-full transition-colors text-white"
+    },
+    "navigation_tab_bar": {
+      "description": "Mobile bottom nav / Desktop sidebar.",
+      "styles": "bg-[#050505]/90 backdrop-blur-xl border-t border-white/10 text-zinc-500 flex justify-around p-4"
+    }
+  },
+  "animations": {
+    "general": "Fast, purposeful micro-interactions. No bouncy or playful physics.",
+    "hover": "Subtle brightness increase or sharp 1px border reveal.",
+    "queue": "Rhythmic pulsing (opacity 0.2 to 1) for loading dots."
+  },
+  "assets": {
+    "libraries_to_install": [
+      "yarn add @phosphor-icons/react",
+      "yarn add framer-motion",
+      "yarn add clsx",
+      "yarn add tailwind-merge",
+      "yarn add date-fns"
+    ],
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1750601490153-3f21e2d382a9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwyfHxmaWxtJTIwZ3JhaW4lMjBibGFjayUyMHRleHR1cmV8ZW58MHx8fHwxNzc1NzMzODk3fDA&ixlib=rb-4.1.0&q=85",
+        "category": "background_texture",
+        "description": "Film grain texture for overlays on the dark mode background to give a raw, analog feel. Apply as a mix-blend-overlay or low opacity absolute background."
+      }
+    ]
+  },
+  "testing": {
+    "requirements": "All interactive and key informational elements MUST include a data-testid attribute using kebab-case, role-based naming convention (e.g., data-testid='login-submit-button')."
+  },
+  "instructions_to_main_agent": [
+    "Apply a dark theme globally by setting the root body background to #050505 and foreground to #FFFFFF.",
+    "Ensure the application strictly uses .js/.jsx extensions (React), not TypeScript (.tsx).",
+    "Implement the landing page with extreme minimalism: massive typography, pure black void, and a prominent 'Just Talk' CTA.",
+    "Use framer-motion for the queue dots animation, and keep it extremely stark.",
+    "The Polaroid element is a stylized div (not an image). Construct it with a light/grey border, dark surface, extra bottom padding, and inject a chat snippet inside. This acts as the user profile grid.",
+    "For icons, use Phosphor Icons (@phosphor-icons/react) with duotone or regular weights.",
+    "Override default Shadcn components to remove roundness (rounded-none or max rounded-sm) to fit the brutalist aesthetic."
+  ]
+}
