@@ -1419,8 +1419,8 @@ async def seed_database():
 async def startup():
     await seed_database()
     # Write test credentials
-    os.makedirs("/app/memory", exist_ok=True)
-    with open("/app/memory/test_credentials.md", "w") as f:
+    os.makedirs("/tmp/memory", exist_ok=True)
+    with open("/tmp/memory/test_credentials.md", "w") as f:
         f.write("# Test Credentials\n\n")
         f.write(f"## Admin\n- Email: {os.environ.get('ADMIN_EMAIL', 'admin@justtalk.com')}\n")
         f.write(f"- Password: {os.environ.get('ADMIN_PASSWORD', 'admin123')}\n")
