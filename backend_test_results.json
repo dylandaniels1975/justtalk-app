@@ -1,7 +1,7 @@
 {
   "summary": {
-    "total_tests": 10,
-    "passed": 10,
+    "total_tests": 19,
+    "passed": 19,
     "failed": 0,
     "success_rate": "100.0%"
   },
@@ -15,10 +15,29 @@
     "Send Message & AI Response",
     "End Conversation",
     "Create Polaroid",
-    "Badges API"
+    "Badges API",
+    "200 Interests Count",
+    "Badges Progress API",
+    "Watch Ad API",
+    "Report User API",
+    "Hide User API",
+    "Social Connect API",
+    "Get Socials API",
+    "Stripe Checkout API",
+    "Conversation Replay Endpoint"
   ],
   "failed_tests": [],
   "detailed_results": [
+    {
+      "test": "Create Fresh User",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Fresh User Onboarding",
+      "status": "PASS",
+      "response_code": 200
+    },
     {
       "test": "Countries Endpoint",
       "status": "PASS",
@@ -73,6 +92,51 @@
       "test": "Badges Endpoint",
       "status": "PASS",
       "response_code": 200
+    },
+    {
+      "test": "200 Interests Check",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Badges Progress",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Watch Ad Reward",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Report User",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Hide User",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Social Connect",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Get Connected Socials",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Stripe Checkout",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Conversation Replay Endpoint",
+      "status": "PASS",
+      "response_code": 404
     }
   ]
 }

@@ -8,11 +8,16 @@ from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depend
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
-import os, logging, uuid, secrets, bcrypt, jwt
+import os
+import logging
+import uuid
+import secrets
+import bcrypt
+import jwt
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
-from seed_data import COUNTRIES, INTERESTS, BADGES
+from seed_data import COUNTRIES, INTERESTS, BADGES, SOCIAL_PLATFORMS
 
 # ── Config ──────────────────────────────────────────────────
 mongo_url = os.environ['MONGO_URL']
@@ -88,6 +93,23 @@ class BadgeShowcaseInput(BaseModel):
 class JoinQueueInput(BaseModel):
     interest_ids: List[str] = []
     prefer_ai: Optional[str] = None  # justin, justine, justice
+
+class ReportInput(BaseModel):
+    reported_user_id: str
+    conversation_id: Optional[str] = None
+    category: str  # hate_extremism, self_harm, spam, inappropriate
+    details: Optional[str] = None
+
+class HideUserInput(BaseModel):
+    hidden_user_id: str
+    conversation_id: Optional[str] = None
+
+class SocialConnectInput(BaseModel):
+    platform: str
+    username: str
+
+class StripeCheckoutInput(BaseModel):
+    origin_url: str
 
 # ── Auth Helpers ─────────────────────────────────────────────
 def hash_password(password: str) -> str:
@@ -686,12 +708,7 @@ async def generate_ai_response(user_id: str, persona: str, user_message: str, in
         history = await db.ai_conversation_history.find(
             {"user_id": user_id, "persona": persona}
         ).sort("created_at", -1).to_list(10)
-        for h in reversed(history):
-            if h["role"] == "user":
-                chat_msg = UserMessage(text=h["content"])
-                # We just need to build context, not actually send
-            # Actually, emergentintegrations handles multi-turn internally
-            # So we just send the latest message
+        # emergentintegrations handles multi-turn internally via session_id
         msg = UserMessage(text=user_message)
         response = await chat.send_message(msg)
         # Save to history
@@ -715,6 +732,18 @@ async def create_polaroid(input: CreatePolaroidInput, request: Request):
     conv = await db.conversations.find_one({"id": input.conversation_id}, {"_id": 0})
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    # Limit: 1 polaroid per AI persona
+    if conv.get("is_ai_chat"):
+        existing_ai = await db.polaroids.find_one({
+            "user_id": user["_id"],
+            "is_from_ai_chat": True,
+            "conversation_id": {"$in": [c["id"] async for c in db.conversations.find(
+                {"user1_id": user["_id"], "is_ai_chat": True, "ai_persona": conv.get("ai_persona")},
+                {"id": 1, "_id": 0}
+            )]}
+        })
+        if existing_ai:
+            raise HTTPException(status_code=400, detail=f"You already have a polaroid from {conv.get('ai_persona', 'AI')}. Limit 1 per AI persona.")
     import random
     polaroid = {
         "id": str(uuid.uuid4()),
@@ -1041,6 +1070,263 @@ async def get_active_conversation(request: Request):
         return {"conversation": None}
     return {"conversation": conv}
 
+# ── Report / Hide ────────────────────────────────────────────
+@api.post("/reports")
+async def report_user(input: ReportInput, request: Request):
+    user = await get_current_user(request)
+    if input.category not in ["hate_extremism", "self_harm", "spam", "inappropriate"]:
+        raise HTTPException(status_code=400, detail="Invalid report category")
+    report = {
+        "id": str(uuid.uuid4()),
+        "reporter_id": user["_id"],
+        "reported_user_id": input.reported_user_id,
+        "conversation_id": input.conversation_id,
+        "category": input.category,
+        "details": input.details,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.reports.insert_one(report)
+    return {"message": "Report submitted", "report_id": report["id"]}
+
+@api.post("/users/hide")
+async def hide_user(input: HideUserInput, request: Request):
+    user = await get_current_user(request)
+    if input.hidden_user_id == user["_id"]:
+        raise HTTPException(status_code=400, detail="Cannot hide yourself")
+    await db.hide_logs.update_one(
+        {"user_id": user["_id"], "hidden_user_id": input.hidden_user_id},
+        {"$set": {
+            "user_id": user["_id"],
+            "hidden_user_id": input.hidden_user_id,
+            "conversation_id": input.conversation_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True
+    )
+    return {"message": "User hidden"}
+
+# ── Watch Ad (reward 5 conversations) ────────────────────────
+@api.post("/users/watch-ad")
+async def watch_ad_reward(request: Request):
+    user = await get_current_user(request)
+    if user.get("is_vip"):
+        raise HTTPException(status_code=400, detail="VIP users have unlimited conversations")
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"])},
+        {"$inc": {"conversations_left": 5}, "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    updated = await db.users.find_one({"_id": ObjectId(user["_id"])}, {"password_hash": 0})
+    updated["_id"] = str(updated["_id"])
+    return {"message": "5 conversations added!", "conversations_left": updated.get("conversations_left", 0)}
+
+# ── Social Connections ───────────────────────────────────────
+@api.post("/users/social/connect")
+async def connect_social(input: SocialConnectInput, request: Request):
+    user = await get_current_user(request)
+    valid = ["instagram", "twitter", "tiktok", "spotify", "discord", "youtube", "twitch", "linkedin"]
+    if input.platform not in valid:
+        raise HTTPException(status_code=400, detail="Invalid platform")
+    await db.user_socials.update_one(
+        {"user_id": user["_id"], "platform": input.platform},
+        {"$set": {
+            "user_id": user["_id"],
+            "platform": input.platform,
+            "username": input.username,
+            "connected_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True
+    )
+    # Award social badge
+    platform_badge = {p["key"]: p["badge_name"] for p in SOCIAL_PLATFORMS}
+    badge_name = platform_badge.get(input.platform)
+    if badge_name:
+        badge = await db.badges.find_one({"name": badge_name}, {"_id": 0})
+        if badge:
+            existing = await db.user_badges.find_one({"user_id": user["_id"], "badge_id": badge["id"]})
+            if not existing:
+                await db.user_badges.insert_one({
+                    "user_id": user["_id"], "badge_id": badge["id"],
+                    "earned_at": datetime.now(timezone.utc).isoformat(), "is_showcased": False,
+                })
+    # Check for "Fully Doxxed"
+    connected_count = await db.user_socials.count_documents({"user_id": user["_id"]})
+    if connected_count >= 8:
+        doxxed = await db.badges.find_one({"name": "Fully Doxxed"}, {"_id": 0})
+        if doxxed:
+            existing = await db.user_badges.find_one({"user_id": user["_id"], "badge_id": doxxed["id"]})
+            if not existing:
+                await db.user_badges.insert_one({
+                    "user_id": user["_id"], "badge_id": doxxed["id"],
+                    "earned_at": datetime.now(timezone.utc).isoformat(), "is_showcased": False,
+                })
+    return {"message": f"{input.platform} connected"}
+
+@api.get("/users/social/me")
+async def get_my_socials(request: Request):
+    user = await get_current_user(request)
+    socials = await db.user_socials.find({"user_id": user["_id"]}, {"_id": 0}).to_list(20)
+    return {"socials": socials}
+
+@api.delete("/users/social/{platform}")
+async def disconnect_social(platform: str, request: Request):
+    user = await get_current_user(request)
+    await db.user_socials.delete_one({"user_id": user["_id"], "platform": platform})
+    return {"message": f"{platform} disconnected"}
+
+# ── Stripe VIP ───────────────────────────────────────────────
+@api.post("/subscriptions/create-checkout")
+async def create_checkout(input: StripeCheckoutInput, request: Request):
+    user = await get_current_user(request)
+    if user.get("is_vip"):
+        raise HTTPException(status_code=400, detail="Already VIP")
+    try:
+        from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
+        api_key = os.environ.get("STRIPE_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="Stripe not configured")
+        host_url = str(request.base_url).rstrip('/')
+        webhook_url = f"{host_url}/api/webhook/stripe"
+        stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+        success_url = f"{input.origin_url}/settings?session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{input.origin_url}/settings"
+        checkout_req = CheckoutSessionRequest(
+            amount=9.99,
+            currency="usd",
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={"user_id": user["_id"], "type": "vip_subscription"}
+        )
+        session = await stripe_checkout.create_checkout_session(checkout_req)
+        # Record transaction
+        await db.payment_transactions.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user["_id"],
+            "session_id": session.session_id,
+            "amount": 9.99,
+            "currency": "usd",
+            "payment_status": "pending",
+            "metadata": {"type": "vip_subscription"},
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        return {"url": session.url, "session_id": session.session_id}
+    except ImportError:
+        raise HTTPException(status_code=500, detail="Stripe integration not available")
+    except Exception as e:
+        logger.error(f"Stripe error: {e}")
+        raise HTTPException(status_code=500, detail="Payment creation failed")
+
+@api.get("/subscriptions/status/{session_id}")
+async def check_payment_status(session_id: str, request: Request):
+    user = await get_current_user(request)
+    txn = await db.payment_transactions.find_one({"session_id": session_id, "user_id": user["_id"]}, {"_id": 0})
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if txn.get("payment_status") == "paid":
+        return {"status": "paid", "payment_status": "paid"}
+    try:
+        from emergentintegrations.payments.stripe.checkout import StripeCheckout
+        api_key = os.environ.get("STRIPE_API_KEY")
+        host_url = str(request.base_url).rstrip('/')
+        webhook_url = f"{host_url}/api/webhook/stripe"
+        stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+        status = await stripe_checkout.get_checkout_status(session_id)
+        if status.payment_status == "paid" and txn.get("payment_status") != "paid":
+            await db.payment_transactions.update_one(
+                {"session_id": session_id},
+                {"$set": {"payment_status": "paid", "status": status.status}}
+            )
+            # Activate VIP
+            await db.users.update_one({"_id": ObjectId(user["_id"])}, {"$set": {
+                "is_vip": True, "conversations_left": 999999,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }})
+            # Award Patron badge
+            patron = await db.badges.find_one({"name": "Patron"}, {"_id": 0})
+            if patron:
+                existing = await db.user_badges.find_one({"user_id": user["_id"], "badge_id": patron["id"]})
+                if not existing:
+                    await db.user_badges.insert_one({
+                        "user_id": user["_id"], "badge_id": patron["id"],
+                        "earned_at": datetime.now(timezone.utc).isoformat(), "is_showcased": False,
+                    })
+        return {"status": status.status, "payment_status": status.payment_status}
+    except Exception as e:
+        logger.error(f"Stripe status error: {e}")
+        return {"status": txn.get("status", "unknown"), "payment_status": txn.get("payment_status", "pending")}
+
+@api.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    try:
+        from emergentintegrations.payments.stripe.checkout import StripeCheckout
+        api_key = os.environ.get("STRIPE_API_KEY")
+        host_url = str(request.base_url).rstrip('/')
+        webhook_url = f"{host_url}/api/webhook/stripe"
+        stripe_checkout = StripeCheckout(api_key=api_key, webhook_url=webhook_url)
+        body = await request.body()
+        sig = request.headers.get("Stripe-Signature", "")
+        event = await stripe_checkout.handle_webhook(body, sig)
+        if event.payment_status == "paid":
+            user_id = event.metadata.get("user_id")
+            if user_id:
+                await db.payment_transactions.update_one(
+                    {"session_id": event.session_id},
+                    {"$set": {"payment_status": "paid", "status": "complete"}}
+                )
+                await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {
+                    "is_vip": True, "conversations_left": 999999,
+                }})
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return {"status": "error"}
+
+# ── Conversation Replay ──────────────────────────────────────
+@api.get("/conversations/{conv_id}/replay")
+async def get_conversation_replay(conv_id: str, request: Request):
+    user = await get_current_user(request)
+    conv = await db.conversations.find_one({"id": conv_id}, {"_id": 0})
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if conv["user1_id"] != user["_id"] and conv.get("user2_id") != user["_id"]:
+        raise HTTPException(status_code=403, detail="Not a participant")
+    messages = await db.messages.find({"conversation_id": conv_id}, {"_id": 0}).sort("created_at", 1).to_list(5000)
+    partner = None
+    if conv.get("is_ai_chat"):
+        partner = {"_id": f"ai_{conv['ai_persona']}", "username": conv["ai_persona"].capitalize(), "is_ai": True}
+    else:
+        partner_id = conv["user2_id"] if conv["user1_id"] == user["_id"] else conv["user1_id"]
+        try:
+            p = await db.users.find_one({"_id": ObjectId(partner_id)}, {"password_hash": 0, "_id": 0})
+            if p:
+                p["_id"] = partner_id
+                partner = p
+        except Exception:
+            pass
+    return {"conversation": conv, "messages": messages, "partner": partner}
+
+# ── Badge Progress ───────────────────────────────────────────
+@api.get("/badges/progress")
+async def get_badge_progress(request: Request):
+    user = await get_current_user(request)
+    stats = await db.user_statistics.find_one({"user_id": user["_id"]}, {"_id": 0}) or {}
+    user_badges = await db.user_badges.find({"user_id": user["_id"]}, {"_id": 0}).to_list(100)
+    earned_ids = set(ub["badge_id"] for ub in user_badges)
+    all_badges = await db.badges.find({}, {"_id": 0}).to_list(100)
+    result = []
+    for badge in all_badges:
+        earned = badge["id"] in earned_ids
+        progress = 0
+        max_val = badge.get("threshold")
+        if max_val and badge["type"] == "polaroid":
+            progress = min(stats.get("total_polaroids", 0), max_val)
+        elif max_val and badge["type"] == "conversation":
+            progress = min(stats.get("total_conversations", 0), max_val)
+        elif max_val and badge["type"] == "friend":
+            progress = min(stats.get("total_friends", 0), max_val)
+        result.append({**badge, "earned": earned, "progress": progress, "max": max_val})
+    return {"badges": result, "earned_count": len(earned_ids), "total_count": len(all_badges)}
+
 # ── Seed & Startup ───────────────────────────────────────────
 async def seed_database():
     # Countries
@@ -1048,18 +1334,24 @@ async def seed_database():
         for c in COUNTRIES:
             await db.countries.update_one({"code": c["code"]}, {"$set": c}, upsert=True)
         logger.info(f"Seeded {len(COUNTRIES)} countries")
-    # Interests
-    if await db.interests.count_documents({}) == 0:
+    # Interests - reseed if count increased
+    current_interest_count = await db.interests.count_documents({})
+    if current_interest_count < len(INTERESTS):
         for i in INTERESTS:
-            i["id"] = str(uuid.uuid4())
-            await db.interests.update_one({"name": i["name"]}, {"$set": i}, upsert=True)
-        logger.info(f"Seeded {len(INTERESTS)} interests")
-    # Badges
-    if await db.badges.count_documents({}) == 0:
+            existing = await db.interests.find_one({"name": i["name"]})
+            if not existing:
+                i_copy = {**i, "id": str(uuid.uuid4())}
+                await db.interests.update_one({"name": i_copy["name"]}, {"$set": i_copy}, upsert=True)
+        logger.info(f"Seeded interests to {len(INTERESTS)} total")
+    # Badges - reseed if count increased
+    current_badge_count = await db.badges.count_documents({})
+    if current_badge_count < len(BADGES):
         for b in BADGES:
-            b["id"] = str(uuid.uuid4())
-            await db.badges.update_one({"name": b["name"]}, {"$set": b}, upsert=True)
-        logger.info(f"Seeded {len(BADGES)} badges")
+            existing = await db.badges.find_one({"name": b["name"]})
+            if not existing:
+                b_copy = {**b, "id": str(uuid.uuid4())}
+                await db.badges.update_one({"name": b_copy["name"]}, {"$set": b_copy}, upsert=True)
+        logger.info(f"Seeded badges to {len(BADGES)} total")
     # Admin user
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@justtalk.com")
     admin_pass = os.environ.get("ADMIN_PASSWORD", "admin123")

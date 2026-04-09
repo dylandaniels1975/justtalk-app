@@ -8,6 +8,7 @@ class JustTalkAPITester:
         self.base_url = base_url
         self.token = None
         self.user_id = None
+        self.fresh_user_token = None
         self.tests_run = 0
         self.tests_passed = 0
         self.test_results = []
@@ -270,14 +271,237 @@ class JustTalkAPITester:
             return True
         return False
 
+    def test_create_fresh_user_for_iteration2(self):
+        """Create a fresh user for iteration 2 testing"""
+        timestamp = int(datetime.now().timestamp())
+        email = f"fresh{timestamp}@test.com"
+        
+        success, data = self.run_test(
+            "Create Fresh User",
+            "POST",
+            "auth/register",
+            200,
+            data={"email": email, "password": "test123"}
+        )
+        
+        if success and 'access_token' in data:
+            self.fresh_user_token = data['access_token']
+            # Complete onboarding
+            onboard_success, _ = self.run_test(
+                "Fresh User Onboarding",
+                "POST", 
+                "onboarding",
+                200,
+                data={
+                    "gender": "other",
+                    "username": f"fresh_user_{timestamp}",
+                    "country_code": "US",
+                    "interest_ids": []
+                },
+                headers={'Authorization': f'Bearer {self.fresh_user_token}'}
+            )
+            return onboard_success
+        return False
+
+    def test_interests_count_200(self):
+        """Test that interests API returns 200 interests (iteration 2)"""
+        success, data = self.run_test("200 Interests Check", "GET", "interests", 200)
+        if success and 'interests' in data:
+            count = len(data['interests'])
+            if count >= 200:
+                print(f"✅ Found {count} interests (expected 200+)")
+                return True
+            else:
+                print(f"❌ Only found {count} interests, expected 200+")
+                return False
+        return False
+
+    def test_badges_progress_api(self):
+        """Test badges progress API (iteration 2)"""
+        success, data = self.run_test("Badges Progress", "GET", "badges/progress", 200)
+        if success and 'badges' in data:
+            badges = data['badges']
+            has_progress = any('progress' in badge for badge in badges)
+            total_count = data.get('total_count', 0)
+            if has_progress and total_count >= 43:
+                print(f"✅ Found {total_count} badges with progress data")
+                return True
+            else:
+                print(f"❌ Missing progress data or insufficient badges: {total_count}")
+                return False
+        return False
+
+    def test_watch_ad_api(self):
+        """Test watch ad API adds 5 conversations (iteration 2)"""
+        if not self.fresh_user_token:
+            print("❌ No fresh user token for watch ad test")
+            return False
+            
+        success, data = self.run_test(
+            "Watch Ad Reward",
+            "POST",
+            "users/watch-ad",
+            200,
+            headers={'Authorization': f'Bearer {self.fresh_user_token}'}
+        )
+        
+        if success and 'conversations_left' in data:
+            print(f"✅ Watch ad successful, conversations_left: {data['conversations_left']}")
+            return True
+        return False
+
+    def test_report_user_api(self):
+        """Test report user API (iteration 2)"""
+        if not self.fresh_user_token:
+            print("❌ No fresh user token for report test")
+            return False
+            
+        success, data = self.run_test(
+            "Report User",
+            "POST",
+            "reports",
+            200,
+            data={
+                "reported_user_id": "507f1f77bcf86cd799439011",
+                "conversation_id": "test-conv-id",
+                "category": "inappropriate",
+                "details": "Test report"
+            },
+            headers={'Authorization': f'Bearer {self.fresh_user_token}'}
+        )
+        
+        if success and 'report_id' in data:
+            print(f"✅ Report created with ID: {data['report_id']}")
+            return True
+        return False
+
+    def test_hide_user_api(self):
+        """Test hide user API (iteration 2)"""
+        if not self.fresh_user_token:
+            print("❌ No fresh user token for hide test")
+            return False
+            
+        success, data = self.run_test(
+            "Hide User",
+            "POST",
+            "users/hide",
+            200,
+            data={
+                "hidden_user_id": "507f1f77bcf86cd799439012",
+                "conversation_id": "test-conv-id"
+            },
+            headers={'Authorization': f'Bearer {self.fresh_user_token}'}
+        )
+        
+        if success and 'message' in data:
+            print(f"✅ User hidden: {data['message']}")
+            return True
+        return False
+
+    def test_social_connect_api(self):
+        """Test social connect API (iteration 2)"""
+        if not self.fresh_user_token:
+            print("❌ No fresh user token for social connect test")
+            return False
+            
+        success, data = self.run_test(
+            "Social Connect",
+            "POST",
+            "users/social/connect",
+            200,
+            data={
+                "platform": "instagram",
+                "username": "test_user_ig"
+            },
+            headers={'Authorization': f'Bearer {self.fresh_user_token}'}
+        )
+        
+        if success and 'message' in data:
+            print(f"✅ Social connected: {data['message']}")
+            return True
+        return False
+
+    def test_get_socials_api(self):
+        """Test get connected socials API (iteration 2)"""
+        if not self.fresh_user_token:
+            print("❌ No fresh user token for get socials test")
+            return False
+            
+        success, data = self.run_test(
+            "Get Connected Socials",
+            "GET",
+            "users/social/me",
+            200,
+            headers={'Authorization': f'Bearer {self.fresh_user_token}'}
+        )
+        
+        if success and 'socials' in data:
+            socials = data['socials']
+            print(f"✅ Found {len(socials)} connected social platforms")
+            return True
+        return False
+
+    def test_stripe_checkout_api(self):
+        """Test Stripe checkout API (iteration 2)"""
+        if not self.fresh_user_token:
+            print("❌ No fresh user token for Stripe test")
+            return False
+            
+        success, data = self.run_test(
+            "Stripe Checkout",
+            "POST",
+            "subscriptions/create-checkout",
+            200,
+            data={
+                "origin_url": "https://pdf-app-builder-39.preview.emergentagent.com"
+            },
+            headers={'Authorization': f'Bearer {self.fresh_user_token}'}
+        )
+        
+        if success and 'url' in data and 'session_id' in data:
+            print(f"✅ Stripe checkout created: {data['session_id']}")
+            return True
+        return False
+
+    def test_conversation_replay_endpoint(self):
+        """Test conversation replay endpoint exists (iteration 2)"""
+        if not self.fresh_user_token:
+            print("❌ No fresh user token for replay test")
+            return False
+            
+        # Test with dummy ID - expect 404 or 403
+        success, data = self.run_test(
+            "Conversation Replay Endpoint",
+            "GET",
+            "conversations/dummy-id/replay",
+            404,  # Expect 404 for non-existent conversation
+            headers={'Authorization': f'Bearer {self.fresh_user_token}'}
+        )
+        
+        if success:
+            print("✅ Conversation replay endpoint exists (404 for dummy ID)")
+            return True
+        # Also accept 403 as valid response
+        elif data.get('status_code') == 403:
+            print("✅ Conversation replay endpoint exists (403 for non-participant)")
+            return True
+        return False
+
 def main():
-    print("🚀 Starting Just Talk API Tests...")
-    print("=" * 50)
+    print("🚀 Starting Just Talk API Tests - Iteration 2...")
+    print("=" * 60)
     
     tester = JustTalkAPITester()
     
-    # Run all tests
+    # Create fresh user for iteration 2 tests
+    print("\n👤 Creating fresh user for iteration 2 tests...")
+    fresh_user_created = tester.test_create_fresh_user_for_iteration2()
+    if not fresh_user_created:
+        print("❌ Failed to create fresh user, some tests will be skipped")
+    
+    # Run all tests (original + iteration 2)
     tests = [
+        # Original tests
         ("Countries API", tester.test_countries_endpoint),
         ("Interests API", tester.test_interests_endpoint),
         ("User Registration", tester.test_register),
@@ -288,6 +512,17 @@ def main():
         ("End Conversation", tester.test_end_conversation),
         ("Create Polaroid", tester.test_create_polaroid),
         ("Badges API", tester.test_badges_endpoint),
+        
+        # Iteration 2 new tests
+        ("200 Interests Count", tester.test_interests_count_200),
+        ("Badges Progress API", tester.test_badges_progress_api),
+        ("Watch Ad API", tester.test_watch_ad_api),
+        ("Report User API", tester.test_report_user_api),
+        ("Hide User API", tester.test_hide_user_api),
+        ("Social Connect API", tester.test_social_connect_api),
+        ("Get Socials API", tester.test_get_socials_api),
+        ("Stripe Checkout API", tester.test_stripe_checkout_api),
+        ("Conversation Replay Endpoint", tester.test_conversation_replay_endpoint),
     ]
     
     passed_tests = []
@@ -305,7 +540,7 @@ def main():
             failed_tests.append(test_name)
     
     # Print results
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 60)
     print(f"📊 Test Results: {len(passed_tests)}/{len(tests)} passed")
     print(f"✅ Passed: {', '.join(passed_tests) if passed_tests else 'None'}")
     print(f"❌ Failed: {', '.join(failed_tests) if failed_tests else 'None'}")

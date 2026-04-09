@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import api from '@/lib/api';
 import { motion } from 'framer-motion';
-import { Camera, UserPlus, House } from '@phosphor-icons/react';
+import { Camera, UserPlus, House, Flag, EyeSlash } from '@phosphor-icons/react';
+import { toast } from 'sonner';
 
 export default function ConversationEndPage() {
   const { conversationId } = useParams();
@@ -40,6 +41,24 @@ export default function ConversationEndPage() {
     try {
       await api.post('/polaroids', { conversation_id: conversationId, snapshot_text: recentMsgs });
       setPolaroidSaved(true);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed');
+    }
+  };
+
+  const reportUser = async () => {
+    if (!partner || partner.is_ai) return;
+    try {
+      await api.post('/reports', { reported_user_id: partner._id, conversation_id: conversationId, category: 'inappropriate' });
+      toast.success('Report submitted');
+    } catch {}
+  };
+
+  const hideUser = async () => {
+    if (!partner || partner.is_ai) return;
+    try {
+      await api.post('/users/hide', { hidden_user_id: partner._id, conversation_id: conversationId });
+      toast.success('User hidden');
     } catch {}
   };
 
@@ -56,7 +75,6 @@ export default function ConversationEndPage() {
           {msgCount > 20 ? 'GOOD TALK.' : msgCount > 5 ? 'NOT BAD.' : 'BRIEF.'}
         </h1>
 
-        {/* Stats */}
         <div className="flex gap-6 justify-center mb-10">
           <div>
             <p className="text-2xl font-black">{msgCount}</p>
@@ -68,38 +86,40 @@ export default function ConversationEndPage() {
           </div>
         </div>
 
-        {/* Actions */}
         <div className="space-y-3">
           {!conversation?.is_ai_chat && partner && !partner.is_ai && (
-            <button
-              onClick={sendFriendRequest}
-              disabled={friendSent}
-              data-testid="add-friend-btn"
-              className={`w-full border px-6 py-4 font-bold uppercase tracking-widest text-sm flex items-center justify-center gap-2 transition-colors ${friendSent ? 'border-[#10B981] text-[#10B981]' : 'border-white/20 text-white hover:bg-white/5'}`}
-            >
+            <button onClick={sendFriendRequest} disabled={friendSent} data-testid="add-friend-btn"
+              className={`w-full border px-6 py-4 font-bold uppercase tracking-widest text-sm flex items-center justify-center gap-2 transition-colors ${friendSent ? 'border-[#10B981] text-[#10B981]' : 'border-white/20 text-white hover:bg-white/5'}`}>
               <UserPlus size={18} />
               {friendSent ? 'REQUEST SENT' : 'ADD FRIEND'}
             </button>
           )}
 
-          <button
-            onClick={savePolaroid}
-            disabled={polaroidSaved}
-            data-testid="save-polaroid-btn"
-            className={`w-full border px-6 py-4 font-bold uppercase tracking-widest text-sm flex items-center justify-center gap-2 transition-colors ${polaroidSaved ? 'border-[#10B981] text-[#10B981]' : 'border-white/20 text-white hover:bg-white/5'}`}
-          >
+          <button onClick={savePolaroid} disabled={polaroidSaved} data-testid="save-polaroid-btn"
+            className={`w-full border px-6 py-4 font-bold uppercase tracking-widest text-sm flex items-center justify-center gap-2 transition-colors ${polaroidSaved ? 'border-[#10B981] text-[#10B981]' : 'border-white/20 text-white hover:bg-white/5'}`}>
             <Camera size={18} />
             {polaroidSaved ? 'POLAROID SAVED' : 'SAVE POLAROID'}
           </button>
 
-          <button
-            onClick={() => navigate('/home')}
-            data-testid="go-home-btn"
-            className="w-full bg-white text-black font-bold uppercase tracking-widest py-4 hover:bg-zinc-200 transition-colors text-sm flex items-center justify-center gap-2"
-          >
+          <button onClick={() => navigate('/home')} data-testid="go-home-btn"
+            className="w-full bg-white text-black font-bold uppercase tracking-widest py-4 hover:bg-zinc-200 transition-colors text-sm flex items-center justify-center gap-2">
             <House size={18} />
             KEEP TALKING
           </button>
+
+          {/* Report / Hide */}
+          {!conversation?.is_ai_chat && partner && !partner.is_ai && (
+            <div className="flex gap-2 pt-2">
+              <button onClick={hideUser} data-testid="hide-user-btn"
+                className="flex-1 border border-white/5 py-2 font-mono text-[10px] text-zinc-600 uppercase tracking-widest hover:text-zinc-400 hover:border-white/10 transition-colors flex items-center justify-center gap-1">
+                <EyeSlash size={12} /> Hide
+              </button>
+              <button onClick={reportUser} data-testid="report-user-btn"
+                className="flex-1 border border-white/5 py-2 font-mono text-[10px] text-zinc-600 uppercase tracking-widest hover:text-[#FF3B30] hover:border-[#FF3B30]/20 transition-colors flex items-center justify-center gap-1">
+                <Flag size={12} /> Report
+              </button>
+            </div>
+          )}
         </div>
       </motion.div>
     </div>
