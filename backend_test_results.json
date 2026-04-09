@@ -1,0 +1,78 @@
+{
+  "summary": {
+    "total_tests": 10,
+    "passed": 10,
+    "failed": 0,
+    "success_rate": "100.0%"
+  },
+  "passed_tests": [
+    "Countries API",
+    "Interests API",
+    "User Registration",
+    "User Login",
+    "User Onboarding",
+    "AI Queue Join",
+    "Send Message & AI Response",
+    "End Conversation",
+    "Create Polaroid",
+    "Badges API"
+  ],
+  "failed_tests": [],
+  "detailed_results": [
+    {
+      "test": "Countries Endpoint",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Interests Endpoint",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "User Registration",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "User Login",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "User Onboarding",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "AI Queue Join",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Send Message",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Check AI Response",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "End Conversation",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Create Polaroid",
+      "status": "PASS",
+      "response_code": 200
+    },
+    {
+      "test": "Badges Endpoint",
+      "status": "PASS",
+      "response_code": 200
+    }
+  ]
+}

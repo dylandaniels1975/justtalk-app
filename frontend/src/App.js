@@ -1,54 +1,67 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { Toaster } from 'sonner';
+import LandingPage from '@/pages/LandingPage';
+import AuthPage from '@/pages/AuthPage';
+import OnboardingPage from '@/pages/OnboardingPage';
+import HomePage from '@/pages/HomePage';
+import ChatPage from '@/pages/ChatPage';
+import ConversationEndPage from '@/pages/ConversationEndPage';
+import ProfilePage from '@/pages/ProfilePage';
+import FriendsPage from '@/pages/FriendsPage';
+import DMPage from '@/pages/DMPage';
+import DMThreadPage from '@/pages/DMThreadPage';
+import BadgesPage from '@/pages/BadgesPage';
+import SettingsPage from '@/pages/SettingsPage';
+import Navigation from '@/components/Navigation';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="min-h-screen bg-[#050505] flex items-center justify-center"><div className="w-2 h-2 bg-[#FF3B30] rounded-full animate-pulse" /></div>;
+  if (!user) return <Navigate to="/auth" replace />;
+  if (!user.onboarding_completed) return <Navigate to="/onboarding" replace />;
+  return children;
+}
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+function AppRoutes() {
+  const { user, loading } = useAuth();
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
+  if (loading) {
+    return <div className="min-h-screen bg-[#050505] flex items-center justify-center"><div className="w-2 h-2 bg-[#FF3B30] rounded-full animate-pulse" /></div>;
+  }
 
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
-  );
-};
-
-function App() {
-  return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </div>
+    <Routes>
+      <Route path="/" element={!user ? <LandingPage /> : user.onboarding_completed ? <Navigate to="/home" /> : <Navigate to="/onboarding" />} />
+      <Route path="/auth" element={!user ? <AuthPage /> : <Navigate to="/home" />} />
+      <Route path="/onboarding" element={user && !user.onboarding_completed ? <OnboardingPage /> : <Navigate to="/home" />} />
+      <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+      <Route path="/chat/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+      <Route path="/conversation-end/:conversationId" element={<ProtectedRoute><ConversationEndPage /></ProtectedRoute>} />
+      <Route path="/profile/:userId?" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+      <Route path="/friends" element={<ProtectedRoute><FriendsPage /></ProtectedRoute>} />
+      <Route path="/dm" element={<ProtectedRoute><DMPage /></ProtectedRoute>} />
+      <Route path="/dm/:threadId" element={<ProtectedRoute><DMThreadPage /></ProtectedRoute>} />
+      <Route path="/badges" element={<ProtectedRoute><BadgesPage /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+    </Routes>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <div className="min-h-screen bg-[#050505]">
+          <AppRoutes />
+          <Toaster
+            position="top-center"
+            toastOptions={{
+              style: { background: '#111111', color: '#fff', border: '1px solid #262626', borderRadius: '0', fontFamily: 'IBM Plex Mono, monospace', fontSize: '12px' },
+            }}
+          />
+        </div>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
