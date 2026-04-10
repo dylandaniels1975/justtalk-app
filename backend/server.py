@@ -755,7 +755,22 @@ async def generate_ai_response(user_id: str, persona: str, user_message: str, in
                 timeout=30.0
             )
             response.raise_for_status()
-            
+            result = response.json()
+            ai_response = result["choices"][0]["message"]["content"]
+        
+        await db.ai_conversation_history.insert_one({
+            "user_id": user_id, "persona": persona, "role": "user",
+            "content": user_message, "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        await db.ai_conversation_history.insert_one({
+            "user_id": user_id, "persona": persona, "role": "assistant",
+            "content": ai_response, "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+        return ai_response
+    except Exception as e:
+        logger.error(f"AI error: {e}")
+        return "yeah"            
 
 # ── Polaroids ────────────────────────────────────────────────
 @api.post("/polaroids")
