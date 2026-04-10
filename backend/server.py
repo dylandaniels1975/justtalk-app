@@ -1395,6 +1395,42 @@ async def seed_database():
             "last_active_at": datetime.now(timezone.utc).isoformat(),
         })
         logger.info("Admin user seeded")
+            # AI Personas
+    ai_personas = [
+        {"name": "Justin", "email": "justin@ai.justtalk", "gender": "male"},
+        {"name": "Justine", "email": "justine@ai.justtalk", "gender": "female"},
+        {"name": "Justice", "email": "justice@ai.justtalk", "gender": "other"},
+    ]
+    for persona in ai_personas:
+        existing = await db.users.find_one({"email": persona["email"]})
+        if not existing:
+            await db.users.insert_one({
+                "email": persona["email"],
+                "password_hash": hash_password("ai_persona_no_login"),
+                "gender": persona["gender"],
+                "username": persona["name"],
+                "tagline": "AI persona",
+                "country_code": None,
+                "is_public": False,
+                "is_banned": False,
+                "is_vip": True,
+                "conversations_left": 999999,
+                "conversations_reset_at": datetime.now(timezone.utc).isoformat(),
+                "onboarding_completed": True,
+                "tutorial_completed": True,
+                "interests": [],
+                "is_ai": True,
+                "sound_enabled": False,
+                "notification_friend_request": False,
+                "notification_dm": False,
+                "notification_polaroid": False,
+                "notification_badge": False,
+                "quiet_hours_enabled": False,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "last_active_at": datetime.now(timezone.utc).isoformat(),
+            })
+            logger.info(f"Seeded AI persona: {persona['name']}")
     # Indexes
     await db.users.create_index("email", unique=True)
     await db.users.create_index("username")
