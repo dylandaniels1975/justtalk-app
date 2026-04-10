@@ -12,3 +12,4 @@ stripe>=8.0.0
 dnspython==2.8.0
 email-validator==2.3.0
 starlette==0.37.2
+httpx

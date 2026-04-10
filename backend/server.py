@@ -510,9 +510,7 @@ async def find_match(user_id: str, interests: list) -> Optional[dict]:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "ended_at": None,
         }
-        await db.conversations.insert_one({**conv, "_id": None})
-        # Fix: remove the None _id
-        await db.conversations.delete_one({"_id": None})
+
         await db.conversations.insert_one(conv)
         # Update queue entries
         await db.queue.update_one({"_id": best_match["_id"]}, {"$set": {"status": "matched", "conversation_id": conv_id}})
@@ -724,8 +722,8 @@ AI_SYSTEM_PROMPTS = {
 
 async def generate_ai_response(user_id: str, persona: str, user_message: str, interests: list) -> str:
     try:
-        from openai import AsyncOpenAI
-        api_key = os.environ.get("OPENAI_API_KEY")
+        import httpx
+        api_key = os.environ.get("OPENROUTER_API_KEY")
         if not api_key:
             return "yeah"
         
@@ -733,7 +731,6 @@ async def generate_ai_response(user_id: str, persona: str, user_message: str, in
         if interests:
             system += f"\n\nUser's interests: {', '.join(interests)}"
         
-        client = AsyncOpenAI(api_key=api_key)
         history = await db.ai_conversation_history.find(
             {"user_id": user_id, "persona": persona}
         ).sort("created_at", -1).limit(10).to_list(10)
@@ -743,25 +740,22 @@ async def generate_ai_response(user_id: str, persona: str, user_message: str, in
             messages.append({"role": h["role"], "content": h["content"]})
         messages.append({"role": "user", "content": user_message})
         
-        completion = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages
-        )
-        response = completion.choices[0].message.content
-        
-        await db.ai_conversation_history.insert_one({
-            "user_id": user_id, "persona": persona, "role": "user",
-            "content": user_message, "created_at": datetime.now(timezone.utc).isoformat()
-        })
-        await db.ai_conversation_history.insert_one({
-            "user_id": user_id, "persona": persona, "role": "assistant",
-            "content": response, "created_at": datetime.now(timezone.utc).isoformat()
-        })
-        
-        return response
-    except Exception as e:
-        logger.error(f"AI error: {e}")
-        return "yeah"
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "HTTP-Referer": "https://justtalk-app.vercel.app",
+                    "X-Title": "Just Talk"
+                },
+                json={
+                    "model": "meta-llama/llama-3.1-8b-instruct:free",
+                    "messages": messages
+                },
+                timeout=30.0
+            )
+            response.raise_for_status()
+            
 
 # ── Polaroids ────────────────────────────────────────────────
 @api.post("/polaroids")
