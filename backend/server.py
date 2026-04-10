@@ -1395,7 +1395,7 @@ async def seed_database():
             "last_active_at": datetime.now(timezone.utc).isoformat(),
         })
         logger.info("Admin user seeded")
-            # AI Personas
+    # AI Personas
     ai_personas = [
         {"name": "Justin", "email": "justin@ai.justtalk", "gender": "male"},
         {"name": "Justine", "email": "justine@ai.justtalk", "gender": "female"},
