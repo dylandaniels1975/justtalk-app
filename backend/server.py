@@ -749,7 +749,7 @@ async def generate_ai_response(user_id: str, persona: str, user_message: str, in
                     "X-Title": "Just Talk"
                 },
                 json={
-                    "model": "meta-llama/llama-3.2-3b-instruct:free",
+                    "model": "openrouter/free",
                     "messages": messages
                 },
                 timeout=30.0
