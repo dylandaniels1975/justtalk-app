@@ -451,6 +451,10 @@ async def check_queue_status(request: Request):
     if match:
         return {"status": "matched", "conversation": match, "is_ai": False}
     # Suggest AI after 15 seconds
+    if wait_seconds > 30:
+        await db.queue.delete_many({"user_id": user_id})
+        conv = await create_ai_conversation(user_id, "justin", entry.get("interests", []))
+        return {"status": "matched", "conversation": conv, "is_ai": True}
     if wait_seconds > 15:
         return {"status": "waiting", "wait_seconds": wait_seconds, "suggest_ai": True}
     return {"status": "waiting", "wait_seconds": wait_seconds, "suggest_ai": False}
@@ -611,6 +615,19 @@ async def update_user_stats(user_id: str, msg_count: int, duration: int):
             "longest_conversation_seconds": duration,
             "most_messages_one_conversation": msg_count,
         })
+    # Auto-friend AI personas
+    ai_emails = ["justin@ai.justtalk", "justine@ai.justtalk", "justice@ai.justtalk"]
+    for email in ai_emails:
+        ai_user = await db.users.find_one({"email": email})
+        if ai_user:
+            await db.friends.insert_one({
+                "id": str(uuid.uuid4()),
+                "requester_id": str(ai_user["_id"]),
+                "addressee_id": user_id,
+                "status": "accepted",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "accepted_at": datetime.now(timezone.utc).isoformat(),
+            })
     else:
         await db.user_statistics.update_one({"user_id": user_id}, {"$set": {
             "total_conversations": stats.get("total_conversations", 0) + 1,
