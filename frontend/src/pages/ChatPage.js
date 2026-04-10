@@ -64,14 +64,11 @@ export default function ChatPage() {
     const content = newMessage.trim();
     setNewMessage('');
     setSending(true);
-    const tempMsg = { id: `temp_${Date.now()}`, sender_id: user._id, content, created_at: new Date().toISOString(), is_ai_message: false };
-    setMessages(prev => [...prev, tempMsg]);
     try {
       const { data } = await api.post(`/conversations/${conversationId}/messages`, { content });
-      setMessages(prev => prev.map(m => m.id === tempMsg.id ? data.message : m));
       lastMessageIdRef.current = data.message.id;
     } catch {
-      setMessages(prev => prev.filter(m => m.id !== tempMsg.id));
+      toast.error('Failed to send message');
     }
     setSending(false);
     inputRef.current?.focus();
