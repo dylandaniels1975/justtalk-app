@@ -207,6 +207,19 @@ async def register(input: RegisterInput, response: Response):
         "total_polaroids": 0, "total_friends": 0,
         "longest_conversation_seconds": 0, "most_messages_one_conversation": 0,
     })
+    # Auto-friend AI personas
+    ai_emails = ["justin@ai.justtalk", "justine@ai.justtalk", "justice@ai.justtalk"]
+    for ai_email in ai_emails:
+        ai_user = await db.users.find_one({"email": ai_email})
+        if ai_user:
+            await db.friends.insert_one({
+                "id": str(uuid.uuid4()),
+                "requester_id": str(ai_user["_id"]),
+                "addressee_id": user_id,
+                "status": "accepted",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "accepted_at": datetime.now(timezone.utc).isoformat(),
+            })
     access = create_access_token(user_id, email)
     refresh = create_refresh_token(user_id)
     set_auth_cookies(response, access, refresh)
@@ -615,19 +628,7 @@ async def update_user_stats(user_id: str, msg_count: int, duration: int):
             "longest_conversation_seconds": duration,
             "most_messages_one_conversation": msg_count,
         })
-    # Auto-friend AI personas
-    ai_emails = ["justin@ai.justtalk", "justine@ai.justtalk", "justice@ai.justtalk"]
-    for email in ai_emails:
-        ai_user = await db.users.find_one({"email": email})
-        if ai_user:
-            await db.friends.insert_one({
-                "id": str(uuid.uuid4()),
-                "requester_id": str(ai_user["_id"]),
-                "addressee_id": user_id,
-                "status": "accepted",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "accepted_at": datetime.now(timezone.utc).isoformat(),
-            })
+    
     else:
         await db.user_statistics.update_one({"user_id": user_id}, {"$set": {
             "total_conversations": stats.get("total_conversations", 0) + 1,
