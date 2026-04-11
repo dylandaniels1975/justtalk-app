@@ -1,10 +1,9 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ChatCircle, Users, ChatDots, User, Crown, Gear } from '@phosphor-icons/react';
+import { ChatCircle, Users, User, Crown, Gear } from '@phosphor-icons/react';
 
 const NAV_ITEMS = [
   { path: '/home', icon: ChatCircle, label: 'Talk' },
   { path: '/friends', icon: Users, label: 'Friends' },
-  { path: '/dm', icon: ChatDots, label: 'Messages' },
   { path: '/profile', icon: User, label: 'Profile' },
   { path: '/vip', icon: Crown, label: 'VIP' },
   { path: '/settings', icon: Gear, label: 'Settings' },
@@ -34,4 +33,3 @@ export default function Navigation() {
     </nav>
   );
 }
-
