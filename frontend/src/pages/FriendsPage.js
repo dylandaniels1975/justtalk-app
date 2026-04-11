@@ -85,7 +85,7 @@ export default function FriendsPage() {
                       <p className="font-mono text-[10px] text-zinc-500">{friend.tagline || 'no tagline'}</p>
                     </div>
                   </button>
-                  <button onClick={() => navigate('/dm')} className="p-2 hover:bg-white/10 rounded-full transition-colors text-zinc-400 hover:text-white" data-testid={`dm-friend-${friend.username}`}>
+                  <button onClick={() => navigate(`/dm/${friend._id}`)} className="p-2 hover:bg-white/10 rounded-full transition-colors text-zinc-400 hover:text-white" data-testid={`dm-friend-${friend.username}`}>
                     <ChatDots size={16} />
                   </button>
                 </motion.div>
